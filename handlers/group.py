@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 
 from aiogram import Router, Bot
-from aiogram.types import ChatMemberUpdated
+from aiogram.types import ChatJoinRequest, ChatMemberUpdated
 from loguru import logger
 
 from config import GROUP_ID, ADMIN_ID, WEEX_REFERRAL_LINK, TRIAL_DAYS
@@ -10,8 +10,67 @@ from models import User
 router = Router()
 
 
+def _welcome_text(trial_end):
+    return (
+        f"Welcome! You've been approved to join the group.\n\n"
+        f"You have a {TRIAL_DAYS}-day trial period.\n"
+        f"Trial ends: {trial_end.strftime('%b %d, %Y %H:%M UTC')}\n\n"
+        f"To stay permanently:\n"
+        f"1. Register on WEEX: {WEEX_REFERRAL_LINK}\n"
+        f"2. Find your WEEX UID in your profile settings\n"
+        f"3. Come back here, press /start, then send /verify YOUR_UID\n\n"
+        f"Press /start to activate the bot — without it I won't be able "
+        f"to send you reminders or updates."
+    )
+
+
+@router.chat_join_request()
+async def on_join_request(event: ChatJoinRequest, bot: Bot):
+    """Primary flow: group has invite link with admin approval required."""
+    if event.chat.id != GROUP_ID:
+        return
+
+    tg_user = event.from_user
+
+    if tg_user.is_bot or tg_user.id == ADMIN_ID:
+        await event.approve()
+        return
+
+    existing = await User.filter(telegram_id=tg_user.id).first()
+    if existing:
+        if existing.status in ("kicked", "inactive_kicked"):
+            await event.decline()
+            logger.info(f"Declined join request from kicked user {tg_user.id} (@{tg_user.username})")
+            return
+        await event.approve()
+        if existing.status == "trial":
+            existing.username = tg_user.username
+            existing.first_name = tg_user.first_name
+            await existing.save()
+        return
+
+    now = datetime.now(timezone.utc)
+    await User.create(
+        telegram_id=tg_user.id,
+        username=tg_user.username,
+        first_name=tg_user.first_name,
+        join_time=now,
+        status="trial",
+    )
+
+    await event.approve()
+
+    trial_end = now + timedelta(days=TRIAL_DAYS)
+    try:
+        await bot.send_message(event.user_chat_id, _welcome_text(trial_end))
+        logger.info(f"Sent welcome DM to {tg_user.id} (@{tg_user.username}) via user_chat_id")
+    except Exception as e:
+        logger.warning(f"Could not DM user {tg_user.id} via user_chat_id: {e}")
+
+
 @router.chat_member()
 async def on_chat_member_update(event: ChatMemberUpdated, bot: Bot):
+    """Fallback: catches direct adds by admin or joins without a join request."""
     if event.chat.id != GROUP_ID:
         return
 
@@ -34,10 +93,6 @@ async def on_chat_member_update(event: ChatMemberUpdated, bot: Bot):
             except Exception:
                 pass
             logger.info(f"Blocked re-join of kicked user {tg_user.id} (@{tg_user.username})")
-        elif existing.status == "trial":
-            existing.username = tg_user.username
-            existing.first_name = tg_user.first_name
-            await existing.save()
         return
 
     now = datetime.now(timezone.utc)
@@ -50,24 +105,8 @@ async def on_chat_member_update(event: ChatMemberUpdated, bot: Bot):
     )
 
     trial_end = now + timedelta(days=TRIAL_DAYS)
-    text = (
-        f"Welcome! You have a {TRIAL_DAYS}-day trial.\n"
-        f"Trial ends: {trial_end.strftime('%b %d, %Y %H:%M UTC')}\n\n"
-        f"To stay permanently:\n"
-        f"1. Register on WEEX: {WEEX_REFERRAL_LINK}\n"
-        f"2. Get your WEEX UID from your profile\n"
-        f"3. DM me and press /start, then send /verify YOUR_WEEX_UID"
-    )
     try:
-        await bot.send_message(tg_user.id, text)
+        await bot.send_message(tg_user.id, _welcome_text(trial_end))
         logger.info(f"Sent welcome DM to {tg_user.id} (@{tg_user.username})")
     except Exception:
-        try:
-            await bot.send_message(
-                GROUP_ID,
-                f"{tg_user.mention_html()}, welcome! You have {TRIAL_DAYS} days to verify.\n"
-                f"Please DM me and press /start to get instructions.",
-                parse_mode="HTML",
-            )
-        except Exception as e:
-            logger.warning(f"Could not notify new user {tg_user.id}: {e}")
+        logger.info(f"New user {tg_user.id} joined without join request, could not DM")

@@ -31,7 +31,7 @@ async def main():
         logger.warning("TEST_MODE is ON — WEEX API calls are bypassed")
     logger.info("Bot started")
     try:
-        await dp.start_polling(bot, allowed_updates=["message", "chat_member"])
+        await dp.start_polling(bot, allowed_updates=["message", "chat_member", "chat_join_request"])
     finally:
         scheduler.shutdown()
         await close_db()
