@@ -24,7 +24,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # edit .env with your values
 
-aerich init-db
+aerich upgrade
 python main.py
 ```
 

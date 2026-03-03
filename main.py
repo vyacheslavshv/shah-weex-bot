@@ -5,7 +5,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from loguru import logger
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, TEST_MODE
 from utils import setup_logging, init_db, close_db
 from handlers import setup_routers
 from scheduler import start_scheduler, scheduler
@@ -27,6 +27,8 @@ async def main():
     await init_db()
     start_scheduler(bot)
 
+    if TEST_MODE:
+        logger.warning("TEST_MODE is ON — WEEX API calls are bypassed")
     logger.info("Bot started")
     try:
         await dp.start_polling(bot, allowed_updates=["message", "chat_member"])

@@ -17,6 +17,7 @@ TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
 INACTIVITY_DAYS = int(os.getenv("INACTIVITY_DAYS", "30"))
 INACTIVITY_ACTION = os.getenv("INACTIVITY_ACTION", "flag")  # "ban" or "flag"
 VERIFY_RATE_LIMIT = int(os.getenv("VERIFY_RATE_LIMIT", "5"))
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() in ("1", "true", "yes")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite://data/db.sqlite3")
 

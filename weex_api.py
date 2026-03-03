@@ -6,7 +6,7 @@ import time
 import aiohttp
 from loguru import logger
 
-from config import WEEX_API_KEY, WEEX_API_SECRET, WEEX_PASSPHRASE, WEEX_BASE_URL
+from config import WEEX_API_KEY, WEEX_API_SECRET, WEEX_PASSPHRASE, WEEX_BASE_URL, TEST_MODE
 
 
 def _sign(timestamp, method, path, body=""):
@@ -42,6 +42,9 @@ async def get_affiliate_uids(page=1, page_size=100):
 
 async def check_uid_in_referrals(weex_uid):
     """Check all pages of affiliate UIDs to find the given UID."""
+    if TEST_MODE:
+        logger.info(f"TEST_MODE: accepting UID {weex_uid} without API check")
+        return True
     page = 1
     while True:
         data = await get_affiliate_uids(page=page)
@@ -80,6 +83,9 @@ async def has_recent_activity(weex_uid, days=30):
     Returns True (active), False (inactive), or None (API error).
     NOTE: adjust field parsing below to match actual WEEX API response structure.
     """
+    if TEST_MODE:
+        logger.debug(f"TEST_MODE: reporting UID {weex_uid} as active")
+        return True
     data = await get_user_trade_data(weex_uid)
     if data is None:
         return None
