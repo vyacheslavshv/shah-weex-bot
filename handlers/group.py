@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 
 from aiogram import Router, Bot
-from aiogram.types import ChatJoinRequest, ChatMemberUpdated
+from aiogram.types import ChatJoinRequest, ChatMemberUpdated, LinkPreviewOptions
 from loguru import logger
 
 from config import GROUP_ID, ADMIN_ID, WEEX_REFERRAL_LINK, TRIAL_DAYS
@@ -76,7 +76,7 @@ async def on_join_request(event: ChatJoinRequest, bot: Bot):
 
     trial_end = now + timedelta(days=TRIAL_DAYS)
     try:
-        await bot.send_message(event.user_chat_id, _welcome_text(trial_end))
+        await bot.send_message(event.user_chat_id, _welcome_text(trial_end), link_preview_options=LinkPreviewOptions(is_disabled=True))
         logger.info(f"Sent welcome DM to {tg_user.id} (@{tg_user.username}) via user_chat_id")
     except Exception as e:
         logger.warning(f"Could not DM user {tg_user.id} via user_chat_id: {e}")
@@ -120,7 +120,7 @@ async def on_chat_member_update(event: ChatMemberUpdated, bot: Bot):
 
     trial_end = now + timedelta(days=TRIAL_DAYS)
     try:
-        await bot.send_message(tg_user.id, _welcome_text(trial_end))
+        await bot.send_message(tg_user.id, _welcome_text(trial_end), link_preview_options=LinkPreviewOptions(is_disabled=True))
         logger.info(f"Sent welcome DM to {tg_user.id} (@{tg_user.username})")
     except Exception:
         logger.info(f"New user {tg_user.id} joined without join request, could not DM")

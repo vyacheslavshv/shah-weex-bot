@@ -1,8 +1,10 @@
 from datetime import datetime, timezone, timedelta
 
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, LinkPreviewOptions
 from aiogram.filters import Command
+
+NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 from loguru import logger
 
 from config import ADMIN_ID, WEEX_REFERRAL_LINK, TRIAL_DAYS, VERIFY_RATE_LIMIT
@@ -45,7 +47,8 @@ async def cmd_start(message: Message):
         await message.answer(
             f"Your trial has {days_left} day(s) remaining.\n\n"
             f"To verify, register on WEEX:\n{WEEX_REFERRAL_LINK}\n\n"
-            f"Then send: /verify YOUR_WEEX_UID"
+            f"Then send: /verify YOUR_WEEX_UID",
+            link_preview_options=NO_PREVIEW,
         )
     else:
         await message.answer(
@@ -105,7 +108,8 @@ async def cmd_verify(message: Message):
         await message.answer(
             "UID not found under our referral.\n\n"
             f"Make sure you registered using this link:\n{WEEX_REFERRAL_LINK}\n\n"
-            "If you just registered, wait a few minutes and try again."
+            "If you just registered, wait a few minutes and try again.",
+            link_preview_options=NO_PREVIEW,
         )
 
 
