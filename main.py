@@ -12,7 +12,7 @@ from scheduler import start_scheduler, scheduler
 
 
 async def main():
-    setup_logging()
+    setup_logging(level="INFO")
 
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN is not set in .env")
