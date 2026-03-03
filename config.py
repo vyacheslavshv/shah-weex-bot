@@ -10,7 +10,7 @@ GROUP_ID = int(os.getenv("GROUP_ID", "0"))
 WEEX_API_KEY = os.getenv("WEEX_API_KEY", "")
 WEEX_API_SECRET = os.getenv("WEEX_API_SECRET", "")
 WEEX_PASSPHRASE = os.getenv("WEEX_PASSPHRASE", "")
-WEEX_BASE_URL = os.getenv("WEEX_BASE_URL", "https://api.weex.com")
+WEEX_BASE_URL = os.getenv("WEEX_BASE_URL", "https://api-spot.weex.com")
 WEEX_REFERRAL_LINK = os.getenv("WEEX_REFERRAL_LINK", "")
 
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
