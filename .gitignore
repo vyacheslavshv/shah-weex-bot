@@ -1,0 +1,11 @@
+TODO.txt
+db.sqlite3*
+.env
+.venv
+venv/
+*.log*
+
+.DS_Store
+__pycache__/
+.cursorignore
+.cursorindexingignore
