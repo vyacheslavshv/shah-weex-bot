@@ -3,9 +3,9 @@ from datetime import datetime, timezone, timedelta
 from aiogram import Router, F
 from aiogram.types import Message, LinkPreviewOptions
 from aiogram.filters import Command
+from loguru import logger
 
 NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
-from loguru import logger
 
 from config import ADMIN_ID, WEEX_REFERRAL_LINK, TRIAL_DAYS, VERIFY_RATE_LIMIT
 from models import User

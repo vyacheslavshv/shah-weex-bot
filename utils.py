@@ -77,13 +77,18 @@ def setup_logging(file_path="logs/bot.log", level="DEBUG", max_file_bytes=50 * 1
     
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
     
-    logging.getLogger("telethon").setLevel(logging.WARNING)
-    logging.getLogger("aiogram.event").setLevel(logging.WARNING)
-    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    for name in (
+        "aiogram.event",
+        "aiosqlite",
+        "apscheduler.scheduler",
+        "apscheduler.executors.default",
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 async def init_db():
     await Tortoise.init(config=TORTOISE_ORM)
+    await Tortoise.generate_schemas(safe=True)
 
 async def close_db():
     await Tortoise.close_connections()

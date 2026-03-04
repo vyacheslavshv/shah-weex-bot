@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from aiogram import Router, Bot, F
 from aiogram.types import Message
@@ -137,7 +137,6 @@ async def cmd_users(message: Message):
     lines = []
     now = datetime.now(timezone.utc)
     for u in trial_users:
-        from datetime import timedelta
         remaining = (u.join_time + timedelta(days=TRIAL_DAYS)) - now
         days_left = max(0, remaining.days)
         lines.append(f"@{u.username or 'N/A'} | ID: {u.telegram_id} | {days_left}d left")

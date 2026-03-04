@@ -1,9 +1,13 @@
 TODO.txt
 db.sqlite3*
+data/
 .env
+.pid
 .venv
 venv/
 *.log*
+logs/
+nohup.out
 
 .DS_Store
 __pycache__/

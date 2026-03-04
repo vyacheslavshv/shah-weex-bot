@@ -4,64 +4,105 @@ Telegram bot for managing a WEEX affiliate trial funnel with automatic verificat
 
 ## How it works
 
-1. User joins the Telegram group
-2. Bot sends a DM with trial info and referral link (7-day trial by default)
-3. User registers on WEEX via the referral link and gets a UID
-4. User sends `/verify <UID>` to the bot — bot checks the WEEX affiliate API
-5. If UID is found under the referral tree → permanent access
-6. If trial expires without verification → auto-kick (hourly check)
-7. Verified users with no trading activity for 30+ days → flagged or kicked (daily check)
+1. User clicks your group invite link (with admin approval enabled)
+2. Bot auto-approves and sends a welcome DM with trial info + your WEEX referral link
+3. User registers on WEEX, gets their UID, sends `/verify <UID>` to the bot
+4. Bot checks the WEEX affiliate API — if UID is found, user gets permanent access
+5. If trial expires (default 7 days) without verification — auto-kick
+6. Verified users with no trading activity for 30+ days — flagged or kicked (configurable)
+7. Users can DM the bot — messages are forwarded to you. Reply to answer them.
 
-Chat relay: users DM the bot, messages are forwarded to the admin. Admin replies by replying to the forwarded message.
+## Server setup (first time)
 
-## Setup
+Run these commands one by one on your Linux server:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# 1. Install required packages
+sudo apt update && sudo apt install -y git python3 python3-venv
 
+# 2. Download the bot
+cd /home
+git clone https://github.com/vyacheslavshv/shah-weex-bot.git
+cd shah-weex-bot
+
+# 3. Create virtual environment and install dependencies
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# 4. Create your config file
 cp .env.example .env
-# edit .env with your values
-
-aerich upgrade
-python main.py
+nano .env
 ```
 
-## Configuration (.env)
+In `nano`, fill in your values (see the table below). When done: **Ctrl+O** → Enter to save, **Ctrl+X** to exit.
 
-| Variable | Description |
+```bash
+# 5. Test the bot (Ctrl+C to stop)
+.venv/bin/python main.py
+
+# 6. If everything works, start in background
+./bot.sh start
+```
+
+## .env configuration
+
+| Variable | What to put |
 |---|---|
-| `BOT_TOKEN` | Telegram bot token from @BotFather |
-| `ADMIN_ID` | Your Telegram user ID (numeric) |
-| `GROUP_ID` | Target group/supergroup ID (numeric, starts with -100) |
-| `WEEX_API_KEY` | WEEX API key |
-| `WEEX_API_SECRET` | WEEX API secret |
-| `WEEX_PASSPHRASE` | WEEX API passphrase |
-| `WEEX_BASE_URL` | WEEX API base URL (default: `https://api.weex.com`) |
-| `WEEX_REFERRAL_LINK` | Your WEEX referral registration link |
+| `BOT_TOKEN` | Token from @BotFather |
+| `ADMIN_ID` | Your Telegram user ID (number). Get it from @userinfobot |
+| `GROUP_ID` | Your group ID (number, starts with -100). Get it from @userinfobot in the group |
+| `WEEX_API_KEY` | Your WEEX API key (from affiliates.weex.com → API settings) |
+| `WEEX_API_SECRET` | Your WEEX API secret |
+| `WEEX_PASSPHRASE` | Your WEEX API passphrase |
+| `WEEX_REFERRAL_LINK` | Your WEEX referral link, e.g. `https://www.weex.com/en/register?vipCode=fsyz` |
 | `TRIAL_DAYS` | Trial period in days (default: 7) |
 | `INACTIVITY_DAYS` | Days without trading before action (default: 30) |
-| `INACTIVITY_ACTION` | `flag` (notify admin) or `ban` (auto-kick) |
-| `VERIFY_RATE_LIMIT` | Max /verify attempts per hour (default: 5) |
+| `INACTIVITY_ACTION` | `flag` (notify you) or `ban` (auto-kick inactive users) |
+
+## Managing the bot
+
+```bash
+./bot.sh start     # Start the bot in background
+./bot.sh stop      # Stop the bot
+./bot.sh restart   # Restart the bot
+./bot.sh status    # Check if the bot is running
+./bot.sh logs      # View live logs (Ctrl+C to exit)
+./bot.sh update    # Pull latest code + restart (for updates)
+```
+
+## Updating the bot
+
+When I push an update, run:
+
+```bash
+cd /home/shah-weex-bot
+./bot.sh update
+```
+
+This pulls the new code, installs any new dependencies, and restarts the bot. Your `.env` settings are preserved.
+
+## Telegram group setup
+
+1. Create a bot via @BotFather, get the token
+2. Add the bot to your group as **admin** (needs permissions: ban users, invite users)
+3. In group settings → Invite Links → create a link with **"Request admin approval"** enabled
+4. Share this invite link with users (not a regular link — must be the one with approval)
 
 ## Bot commands
 
-### User commands (private chat)
-- `/start` — show trial status and instructions
+**User commands** (private chat with bot):
+- `/start` — show trial status
 - `/verify <weex_uid>` — verify WEEX account
 - `/help` — list commands
 
-### Admin commands (private chat)
+**Admin commands** (private chat with bot):
 - `/stats` — group statistics
-- `/status <user_id>` — detailed user info
-- `/reset <user_id>` — reset trial (unban + new trial period)
+- `/status <user_id>` — check user info
+- `/reset <user_id>` — reset trial (unban + new trial)
 - `/kick <user_id>` — manual kick/ban
-- `/users` — list all trial users with days remaining
+- `/users` — list trial users
 
-### Chat relay
-- Users send any message to the bot → forwarded to admin
-- Admin replies to the forwarded message → delivered back to the user
+**Chat relay**: users DM the bot, you receive forwarded messages. Reply to a forwarded message to respond.
 
 ## Project structure
 
@@ -69,37 +110,15 @@ python main.py
 ├── main.py           # Entry point
 ├── config.py         # Environment variables
 ├── models.py         # Database models (User, RelayMessage)
-├── utils.py          # Logging setup, DB init
+├── utils.py          # Logging, DB init
 ├── weex_api.py       # WEEX affiliate API client
-├── scheduler.py      # Periodic jobs (trial expiry, inactivity)
+├── scheduler.py      # Trial expiry + inactivity checks
+├── bot.sh            # Start/stop/restart/update script
 ├── handlers/
-│   ├── __init__.py   # Router registration
-│   ├── group.py      # Group join/leave events
+│   ├── group.py      # Group join events
 │   ├── commands.py   # /start, /verify, /help
 │   ├── admin.py      # Admin commands
 │   └── relay.py      # DM relay
-├── requirements.txt
-├── .env.example
-└── pyproject.toml    # Aerich config
+├── .env.example      # Config template
+└── requirements.txt
 ```
-
-## Database migrations
-
-Uses Tortoise ORM + Aerich.
-
-```bash
-# first time
-aerich init-db
-
-# after model changes
-aerich migrate
-aerich upgrade
-```
-
-## Notes
-
-- The bot must be an **admin** in the target group to receive join events and kick members.
-- After joining the group, the bot sends 1 welcome DM. For continued messaging, the user must press `/start` in the bot's private chat.
-- Re-joining the group does **not** reset the trial. Only `/reset` by admin does.
-- One Telegram account can only be linked to one WEEX UID (enforced).
-- WEEX API signature follows the Bitget-style HMAC-SHA256 pattern. Adjust `weex_api.py` if the actual API differs.
