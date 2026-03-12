@@ -101,6 +101,8 @@ This pulls the new code, installs any new dependencies, and restarts the bot. Yo
 - `/reset <user_id>` — reset trial (unban + new trial)
 - `/kick <user_id>` — manual kick/ban
 - `/users` — list trial users
+- `/unflag <user_id>` — set a flagged user back to verified
+- `/unflag all` — unflag all flagged users at once
 
 **Chat relay**: users DM the bot, you receive forwarded messages. Reply to a forwarded message to respond.
 
