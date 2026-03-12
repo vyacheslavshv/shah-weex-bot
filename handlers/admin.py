@@ -142,3 +142,38 @@ async def cmd_users(message: Message):
         lines.append(f"@{u.username or 'N/A'} | ID: {u.telegram_id} | {days_left}d left")
 
     await message.answer("Trial users:\n\n" + "\n".join(lines))
+
+
+@router.message(Command("unflag"))
+async def cmd_unflag(message: Message):
+    args = message.text.split(maxsplit=1)
+
+    if len(args) >= 2 and args[1].strip().lower() == "all":
+        count = await User.filter(status="flagged").update(status="verified")
+        await message.answer(f"Unflagged {count} user(s). Status set back to verified.")
+        logger.info(f"Admin unflagged all ({count} users)")
+        return
+
+    if len(args) < 2:
+        await message.answer("Usage:\n/unflag <telegram_user_id>\n/unflag all")
+        return
+
+    try:
+        target_id = int(args[1].strip())
+    except ValueError:
+        await message.answer("Invalid user ID.")
+        return
+
+    user = await User.filter(telegram_id=target_id).first()
+    if not user:
+        await message.answer("User not found in database.")
+        return
+
+    if user.status != "flagged":
+        await message.answer(f"User is not flagged (current status: {user.status}).")
+        return
+
+    user.status = "verified"
+    await user.save()
+    await message.answer(f"User {target_id} unflagged. Status: verified.")
+    logger.info(f"Admin unflagged user {target_id}")

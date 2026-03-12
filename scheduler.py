@@ -37,7 +37,12 @@ async def check_trial_expiry(bot: Bot):
 
 
 async def check_inactivity(bot: Bot):
-    verified = await User.filter(status="verified", weex_uid__not_isnull=True).all()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=INACTIVITY_DAYS)
+    verified = await User.filter(
+        status="verified",
+        weex_uid__not_isnull=True,
+        verified_time__lt=cutoff,
+    ).all()
 
     for user in verified:
         if not user.weex_uid:

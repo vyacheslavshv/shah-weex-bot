@@ -33,6 +33,7 @@ case "$1" in
     ;;
   update)
     "$0" stop
+    git -C "$DIR" stash --quiet 2>/dev/null
     git -C "$DIR" pull
     "$PIP" install -r "$DIR/requirements.txt" --quiet
     cd "$DIR" && "$VENV/bin/aerich" upgrade 2>/dev/null
