@@ -28,6 +28,7 @@ def _headers(method, path, body=""):
 
 
 async def get_affiliate_uids(page=1, page_size=100):
+    """Fetch affiliate UIDs from WEEX V3 API. Returns parsed JSON or None on error."""
     path = f"/api/v3/rebate/affiliate/getAffiliateUIDs?page={page}&pageSize={page_size}"
     try:
         async with aiohttp.ClientSession() as session:
@@ -41,14 +42,19 @@ async def get_affiliate_uids(page=1, page_size=100):
 
 
 async def check_uid_in_referrals(weex_uid):
+    """
+    Check if a WEEX UID is in the affiliate referral list.
+    Returns True (found), False (not found), or None (API error).
+    """
     if TEST_MODE:
         logger.info(f"TEST_MODE: accepting UID {weex_uid} without API check")
         return True
     page = 1
     while True:
         data = await get_affiliate_uids(page=page)
-        if not data:
-            return False
+        if data is None:
+            logger.warning(f"WEEX API returned None for page {page} — treating as API error")
+            return None
         items = data.get("channelUserInfoItemList", [])
         if not items:
             return False
@@ -61,45 +67,3 @@ async def check_uid_in_referrals(weex_uid):
             break
         page += 1
     return False
-
-
-async def get_user_trade_data(weex_uid, start_time=None, end_time=None):
-    params = f"uid={weex_uid}"
-    if start_time:
-        params += f"&startTime={start_time}"
-    if end_time:
-        params += f"&endTime={end_time}"
-    path = f"/api/v3/rebate/affiliate/getChannelUserTradeAndAsset?{params}"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(WEEX_BASE_URL + path, headers=_headers("GET", path)) as resp:
-                data = await resp.json(content_type=None)
-                records = data.get("records", [])
-                if records:
-                    return records[0]
-                return None
-    except Exception as e:
-        logger.error(f"WEEX API error (getChannelUserTradeAndAsset): {e}")
-        return None
-
-
-async def has_recent_activity(weex_uid, days=30):
-    """
-    Check if user traded in the last `days` days.
-    Returns True (active), False (inactive), or None (API error).
-    """
-    if TEST_MODE:
-        logger.debug(f"TEST_MODE: reporting UID {weex_uid} as active")
-        return True
-    now_ms = int(time.time() * 1000)
-    start_ms = now_ms - (days * 86400 * 1000)
-    record = await get_user_trade_data(weex_uid, start_time=start_ms, end_time=now_ms)
-    if record is None:
-        return None
-    try:
-        spot = float(record.get("spotTradingAmount", 0) or 0)
-        futures = float(record.get("futuresTradingAmount", 0) or 0)
-        return (spot + futures) > 0
-    except (ValueError, TypeError):
-        logger.warning(f"Could not parse trade data for UID {weex_uid}")
-        return None

@@ -15,6 +15,7 @@ class User(Model):
     verify_attempts = fields.IntField(default=0)
     last_verify_attempt = fields.DatetimeField(null=True)
     bot_started = fields.BooleanField(default=False)
+    last_reminder = fields.IntField(default=0)
 
     class Meta:
         table = "users"

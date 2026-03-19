@@ -68,15 +68,15 @@ def setup_logging(file_path="logs/bot.log", level="DEBUG", max_file_bytes=50 * 1
     log_dir = os.path.dirname(file_path)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
-    
+
     log_format = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
-    
+
     logger.add(sys.stderr, level=level, format=log_format)
     sink = SingleFileSink(file_path=file_path, max_bytes=max_file_bytes, keep_bytes=int(max_file_bytes * 0.8))
     logger.add(sink, level=level, format=log_format)
-    
+
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-    
+
     for name in (
         "aiogram.event",
         "aiosqlite",
@@ -89,6 +89,13 @@ def setup_logging(file_path="logs/bot.log", level="DEBUG", max_file_bytes=50 * 1
 async def init_db():
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
+    # Migrate: add last_reminder column if missing (safe for existing DBs)
+    conn = Tortoise.get_connection("default")
+    try:
+        await conn.execute_query("ALTER TABLE users ADD COLUMN last_reminder INTEGER DEFAULT 0")
+    except Exception:
+        pass  # Column already exists
+
 
 async def close_db():
     await Tortoise.close_connections()

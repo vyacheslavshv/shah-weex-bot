@@ -1,10 +1,10 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from aiogram import Router, Bot
-from aiogram.types import ChatJoinRequest, ChatMemberUpdated, LinkPreviewOptions
+from aiogram.types import ChatJoinRequest, ChatMemberUpdated
 from loguru import logger
 
-from config import GROUP_ID, ADMIN_ID, WEEX_REFERRAL_LINK, TRIAL_DAYS
+from config import GROUP_ID, ADMIN_ID
 from models import User
 
 router = Router()
@@ -24,23 +24,9 @@ async def _safe_decline(event: ChatJoinRequest):
         pass
 
 
-def _welcome_text(trial_end):
-    return (
-        f"Welcome! You've been approved to join the group.\n\n"
-        f"You have a {TRIAL_DAYS}-day trial period.\n"
-        f"Trial ends: {trial_end.strftime('%b %d, %Y %H:%M UTC')}\n\n"
-        f"To stay permanently:\n"
-        f"1. Register on WEEX: {WEEX_REFERRAL_LINK}\n"
-        f"2. Find your WEEX UID in your profile settings\n"
-        f"3. Come back here, press /start, then send /verify YOUR_UID\n\n"
-        f"Press /start to activate the bot — without it I won't be able "
-        f"to send you reminders or updates."
-    )
-
-
 @router.chat_join_request()
 async def on_join_request(event: ChatJoinRequest, bot: Bot):
-    """Primary flow: group has invite link with admin approval required."""
+    """Auto-approve/decline join requests based on user status."""
     if event.chat.id != GROUP_ID:
         return
 
@@ -51,18 +37,22 @@ async def on_join_request(event: ChatJoinRequest, bot: Bot):
         return
 
     existing = await User.filter(telegram_id=tg_user.id).first()
+
     if existing:
         if existing.status in ("kicked", "inactive_kicked"):
             await _safe_decline(event)
             logger.info(f"Declined join request from kicked user {tg_user.id} (@{tg_user.username})")
             return
+
+        # Trial or verified — approve
         await _safe_approve(event)
-        if existing.status == "trial":
-            existing.username = tg_user.username
-            existing.first_name = tg_user.first_name
-            await existing.save()
+        existing.username = tg_user.username
+        existing.first_name = tg_user.first_name
+        await existing.save()
+        logger.info(f"Approved join request from {tg_user.id} (@{tg_user.username}), status={existing.status}")
         return
 
+    # User not in DB — they skipped the bot. Create a trial record and approve.
     now = datetime.now(timezone.utc)
     await User.create(
         telegram_id=tg_user.id,
@@ -70,21 +60,15 @@ async def on_join_request(event: ChatJoinRequest, bot: Bot):
         first_name=tg_user.first_name,
         join_time=now,
         status="trial",
+        last_reminder=0,
     )
-
     await _safe_approve(event)
-
-    trial_end = now + timedelta(days=TRIAL_DAYS)
-    try:
-        await bot.send_message(event.user_chat_id, _welcome_text(trial_end), link_preview_options=LinkPreviewOptions(is_disabled=True))
-        logger.info(f"Sent welcome DM to {tg_user.id} (@{tg_user.username}) via user_chat_id")
-    except Exception as e:
-        logger.warning(f"Could not DM user {tg_user.id} via user_chat_id: {e}")
+    logger.info(f"Approved join request from new user {tg_user.id} (@{tg_user.username}), created trial")
 
 
 @router.chat_member()
 async def on_chat_member_update(event: ChatMemberUpdated, bot: Bot):
-    """Fallback: catches direct adds by admin or joins without a join request."""
+    """Fallback: catches direct adds or joins without a join request."""
     if event.chat.id != GROUP_ID:
         return
 
@@ -109,6 +93,7 @@ async def on_chat_member_update(event: ChatMemberUpdated, bot: Bot):
             logger.info(f"Blocked re-join of kicked user {tg_user.id} (@{tg_user.username})")
         return
 
+    # User not in DB — create trial record
     now = datetime.now(timezone.utc)
     await User.create(
         telegram_id=tg_user.id,
@@ -116,11 +101,6 @@ async def on_chat_member_update(event: ChatMemberUpdated, bot: Bot):
         first_name=tg_user.first_name,
         join_time=now,
         status="trial",
+        last_reminder=0,
     )
-
-    trial_end = now + timedelta(days=TRIAL_DAYS)
-    try:
-        await bot.send_message(tg_user.id, _welcome_text(trial_end), link_preview_options=LinkPreviewOptions(is_disabled=True))
-        logger.info(f"Sent welcome DM to {tg_user.id} (@{tg_user.username})")
-    except Exception:
-        logger.info(f"New user {tg_user.id} joined without join request, could not DM")
+    logger.info(f"New user {tg_user.id} joined group directly, created trial")

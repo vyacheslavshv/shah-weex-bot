@@ -1,5 +1,6 @@
 from aiogram import Router, Bot, F
 from aiogram.types import Message
+from aiogram.filters import StateFilter
 from loguru import logger
 
 from config import ADMIN_ID
@@ -29,9 +30,9 @@ async def admin_reply(message: Message, bot: Bot):
         logger.error(f"Relay delivery failed to {relay.user_telegram_id}: {e}")
 
 
-@router.message(F.from_user.id != ADMIN_ID)
+@router.message(F.from_user.id != ADMIN_ID, StateFilter(None))
 async def user_dm(message: Message, bot: Bot):
-    """User sends DM -> forward to admin."""
+    """User sends DM -> forward to admin. Only when no FSM state is active."""
     try:
         forwarded = await message.forward(ADMIN_ID)
         await RelayMessage.create(

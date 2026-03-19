@@ -3,15 +3,60 @@ from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from aiogram import Bot
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from loguru import logger
 
-from config import GROUP_ID, ADMIN_ID, TRIAL_DAYS, INACTIVITY_DAYS, INACTIVITY_ACTION
+from config import GROUP_ID, ADMIN_ID, TRIAL_DAYS, WEEX_REFERRAL_LINK, GROUP_INVITE_LINK
 from models import User
-from weex_api import has_recent_activity
 
 scheduler = AsyncIOScheduler()
 
 
+# ---------------------------------------------------------------------------
+# Keyboards used in scheduler messages
+# ---------------------------------------------------------------------------
+def _kb_verify_prompt():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Open WEEX Link", url=WEEX_REFERRAL_LINK)],
+        [InlineKeyboardButton(text="Verify My UID", callback_data="verify_uid")],
+    ])
+
+
+# ---------------------------------------------------------------------------
+# Reminder messages
+# ---------------------------------------------------------------------------
+REMINDER_MESSAGES = {
+    1: (
+        "Your free trial is now active.\n\n"
+        "To keep access after the trial period, create a WEEX account "
+        "through our referral link and verify your UID."
+    ),
+    2: (
+        "Trial reminder — Day 2\n\n"
+        "Have you created your WEEX account yet? "
+        "Verify your UID to secure permanent access to the group."
+    ),
+    3: (
+        "Trial reminder — 2 days remaining\n\n"
+        "Your trial is ending soon. Verify your WEEX account now "
+        "to avoid losing access to the signals group."
+    ),
+    4: (
+        "Trial reminder — Less than 24 hours left\n\n"
+        "Your access expires tomorrow. "
+        "Verify your WEEX UID now to keep your spot in the group."
+    ),
+    5: (
+        "Final reminder — About 2 hours left\n\n"
+        "Your trial is about to expire. "
+        "This is your last chance to verify and keep access."
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# Trial expiry: kick unverified users after trial ends
+# ---------------------------------------------------------------------------
 async def check_trial_expiry(bot: Bot):
     cutoff = datetime.now(timezone.utc) - timedelta(days=TRIAL_DAYS)
     expired = await User.filter(status="trial", join_time__lt=cutoff).all()
@@ -19,70 +64,88 @@ async def check_trial_expiry(bot: Bot):
     for user in expired:
         try:
             await bot.ban_chat_member(GROUP_ID, user.telegram_id)
-            user.status = "kicked"
-            await user.save()
             logger.info(f"Kicked expired trial: {user.telegram_id} (@{user.username})")
-
-            if user.bot_started:
-                try:
-                    await bot.send_message(
-                        user.telegram_id,
-                        "Your trial period has expired and you've been removed from the group.\n"
-                        "Contact the admin if you believe this is an error."
-                    )
-                except Exception:
-                    pass
         except Exception as e:
-            logger.error(f"Failed to kick expired user {user.telegram_id}: {e}")
+            logger.warning(f"Could not kick {user.telegram_id} from group (may not be member): {e}")
+
+        user.status = "kicked"
+        await user.save()
+
+        if user.bot_started:
+            try:
+                await bot.send_message(
+                    user.telegram_id,
+                    "Your trial period has ended and you have been "
+                    "removed from the group.\n\n"
+                    "You can still verify your WEEX account to regain access.",
+                    reply_markup=_kb_verify_prompt(),
+                )
+            except Exception:
+                pass
+
+        # Notify admin
+        try:
+            await bot.send_message(
+                ADMIN_ID,
+                f"Removed expired trial user:\n"
+                f"@{user.username or 'N/A'} (ID: {user.telegram_id})",
+            )
+        except Exception:
+            pass
 
 
-async def check_inactivity(bot: Bot):
-    cutoff = datetime.now(timezone.utc) - timedelta(days=INACTIVITY_DAYS)
-    verified = await User.filter(
-        status="verified",
-        weex_uid__not_isnull=True,
-        verified_time__lt=cutoff,
-    ).all()
+# ---------------------------------------------------------------------------
+# Reminders: send at specific points during trial
+#   1 = 1 hour after start
+#   2 = day 2
+#   3 = day 5
+#   4 = 24 hours before expiry
+#   5 = 2 hours before expiry
+# ---------------------------------------------------------------------------
+async def send_reminders(bot: Bot):
+    now = datetime.now(timezone.utc)
+    trial_users = await User.filter(status="trial", bot_started=True).all()
 
-    for user in verified:
-        if not user.weex_uid:
-            continue
+    for user in trial_users:
+        trial_end = user.join_time + timedelta(days=TRIAL_DAYS)
+        elapsed = now - user.join_time
+        remaining = trial_end - now
 
-        active = await has_recent_activity(user.weex_uid, INACTIVITY_DAYS)
-        if active is None:
-            logger.warning(f"Could not check activity for {user.telegram_id} (UID: {user.weex_uid})")
-            continue
+        elapsed_hours = elapsed.total_seconds() / 3600
+        remaining_hours = remaining.total_seconds() / 3600
 
-        user.last_trade_check = datetime.now(timezone.utc)
+        last = user.last_reminder or 0
 
-        if not active:
-            if INACTIVITY_ACTION == "ban":
-                try:
-                    await bot.ban_chat_member(GROUP_ID, user.telegram_id)
-                    user.status = "inactive_kicked"
-                    await user.save()
-                    logger.info(f"Kicked inactive user {user.telegram_id}")
-                except Exception as e:
-                    logger.error(f"Failed to kick inactive user {user.telegram_id}: {e}")
-                    continue
-            else:
-                user.status = "flagged"
+        # Determine which reminder to send next
+        next_reminder = None
+        if last < 1 and elapsed_hours >= 1:
+            next_reminder = 1
+        elif last < 2 and elapsed.days >= 2:
+            next_reminder = 2
+        elif last < 3 and elapsed.days >= 5:
+            next_reminder = 3
+        elif last < 4 and remaining_hours <= 24:
+            next_reminder = 4
+        elif last < 5 and remaining_hours <= 2:
+            next_reminder = 5
+
+        if next_reminder and next_reminder in REMINDER_MESSAGES:
+            try:
+                await bot.send_message(
+                    user.telegram_id,
+                    REMINDER_MESSAGES[next_reminder],
+                    reply_markup=_kb_verify_prompt(),
+                )
+                user.last_reminder = next_reminder
                 await user.save()
-                logger.info(f"Flagged inactive user {user.telegram_id}")
-                try:
-                    await bot.send_message(
-                        ADMIN_ID,
-                        f"Inactive user flagged:\n"
-                        f"@{user.username or 'N/A'} (ID: {user.telegram_id})\n"
-                        f"WEEX UID: {user.weex_uid}\n"
-                        f"No trading activity for {INACTIVITY_DAYS}+ days"
-                    )
-                except Exception:
-                    pass
-        else:
-            await user.save()
+                logger.info(f"Sent reminder #{next_reminder} to {user.telegram_id}")
+            except Exception as e:
+                logger.warning(f"Failed to send reminder to {user.telegram_id}: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Scheduler setup
+# ---------------------------------------------------------------------------
 def start_scheduler(bot: Bot):
     scheduler.add_job(
         check_trial_expiry,
@@ -92,11 +155,11 @@ def start_scheduler(bot: Bot):
         replace_existing=True,
     )
     scheduler.add_job(
-        check_inactivity,
-        IntervalTrigger(hours=24),
+        send_reminders,
+        IntervalTrigger(hours=1),
         args=[bot],
-        id="inactivity_check",
+        id="reminders",
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("Scheduler started (trial check: hourly, inactivity check: daily)")
+    logger.info("Scheduler started (trial expiry: hourly, reminders: hourly)")
