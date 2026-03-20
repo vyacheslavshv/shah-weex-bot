@@ -59,17 +59,20 @@ REMINDER_MESSAGES = {
 # ---------------------------------------------------------------------------
 async def check_trial_expiry(bot: Bot):
     cutoff = datetime.now(timezone.utc) - timedelta(days=TRIAL_DAYS)
-    expired = await User.filter(status="trial", join_time__lt=cutoff).all()
+    expired = await User.filter(status="trial", bot_started=True, join_time__lt=cutoff).all()
 
     for user in expired:
+        # Atomic update: only proceed if status is still "trial"
+        updated = await User.filter(id=user.id, status="trial").update(status="kicked")
+        if not updated:
+            # Already processed by a previous run or concurrent job — skip
+            continue
+
         try:
             await bot.ban_chat_member(GROUP_ID, user.telegram_id)
             logger.info(f"Kicked expired trial: {user.telegram_id} (@{user.username})")
         except Exception as e:
             logger.warning(f"Could not kick {user.telegram_id} from group (may not be member): {e}")
-
-        user.status = "kicked"
-        await user.save()
 
         if user.bot_started:
             try:
@@ -83,7 +86,6 @@ async def check_trial_expiry(bot: Bot):
             except Exception:
                 pass
 
-        # Notify admin
         try:
             await bot.send_message(
                 ADMIN_ID,
@@ -104,7 +106,11 @@ async def check_trial_expiry(bot: Bot):
 # ---------------------------------------------------------------------------
 async def send_reminders(bot: Bot):
     now = datetime.now(timezone.utc)
-    trial_users = await User.filter(status="trial", bot_started=True).all()
+    # Only get users whose trial has NOT yet expired
+    cutoff = now - timedelta(days=TRIAL_DAYS)
+    trial_users = await User.filter(
+        status="trial", bot_started=True, join_time__gt=cutoff
+    ).all()
 
     for user in trial_users:
         trial_end = user.join_time + timedelta(days=TRIAL_DAYS)
@@ -136,8 +142,8 @@ async def send_reminders(bot: Bot):
                     REMINDER_MESSAGES[next_reminder],
                     reply_markup=_kb_verify_prompt(),
                 )
-                user.last_reminder = next_reminder
-                await user.save()
+                # Atomic update — only touch last_reminder, never overwrite status
+                await User.filter(id=user.id).update(last_reminder=next_reminder)
                 logger.info(f"Sent reminder #{next_reminder} to {user.telegram_id}")
             except Exception as e:
                 logger.warning(f"Failed to send reminder to {user.telegram_id}: {e}")

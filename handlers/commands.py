@@ -79,7 +79,7 @@ def kb_verify_fail():
     ])
 
 
-def kb_reminder():
+def kb_verify_prompt():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Open WEEX Link", url=WEEX_REFERRAL_LINK)],
         [InlineKeyboardButton(text="Verify My UID", callback_data="verify_uid")],
@@ -90,13 +90,6 @@ def kb_rejoin():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Rejoin Private Group", url=GROUP_INVITE_LINK)],
         [InlineKeyboardButton(text="Open WEEX Link", url=WEEX_REFERRAL_LINK)],
-    ])
-
-
-def kb_kicked_verify():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Open WEEX Link", url=WEEX_REFERRAL_LINK)],
-        [InlineKeyboardButton(text="Verify My UID", callback_data="verify_uid")],
     ])
 
 
@@ -173,24 +166,33 @@ async def cmd_start(message: Message, state: FSMContext):
     elif user.status == "trial":
         trial_end = user.join_time + timedelta(days=TRIAL_DAYS)
         remaining = trial_end - datetime.now(timezone.utc)
-        days_left = max(0, remaining.days)
-        hours_left = max(0, int(remaining.total_seconds() // 3600))
-        time_text = f"{days_left} day(s)" if days_left > 0 else f"{hours_left} hour(s)"
 
-        await message.answer(
-            f"Your trial is active — {time_text} remaining.\n\n"
-            "To keep access after the trial:\n"
-            "1. Open the WEEX link and create your account\n"
-            "2. Copy your UID from your WEEX profile\n"
-            "3. Tap \"Verify My UID\" below",
-            reply_markup=kb_post_join(),
-        )
+        # Trial already expired but scheduler hasn't processed yet
+        if remaining.total_seconds() <= 0:
+            await message.answer(
+                "Your trial period has ended.\n\n"
+                "You can still verify your WEEX account to keep access.",
+                reply_markup=kb_verify_prompt(),
+            )
+        else:
+            days_left = max(0, remaining.days)
+            hours_left = max(0, int(remaining.total_seconds() // 3600))
+            time_text = f"{days_left} day(s)" if days_left > 0 else f"{hours_left} hour(s)"
+
+            await message.answer(
+                f"Your trial is active — {time_text} remaining.\n\n"
+                "To keep access after the trial:\n"
+                "1. Open the WEEX link and create your account\n"
+                "2. Copy your UID from your WEEX profile\n"
+                "3. Tap \"Verify My UID\" below",
+                reply_markup=kb_post_join(),
+            )
     elif user.status in ("kicked", "inactive_kicked"):
         await message.answer(
             "Your trial period has ended and you were removed "
             "from the group.\n\n"
             "You can still verify your WEEX account to regain access.",
-            reply_markup=kb_kicked_verify(),
+            reply_markup=kb_verify_prompt(),
         )
     else:
         await message.answer(WELCOME_TEXT, reply_markup=kb_welcome())
@@ -213,12 +215,22 @@ async def cb_start_trial(callback: CallbackQuery):
         await callback.answer()
         return
 
-    # Trial already active
+    # Trial already active (or expired but not yet processed)
     if user and user.status == "trial":
         trial_end = user.join_time + timedelta(days=TRIAL_DAYS)
         remaining = trial_end - datetime.now(timezone.utc)
-        days_left = max(0, remaining.days)
 
+        if remaining.total_seconds() <= 0:
+            await callback.message.edit_text(
+                "Your trial period has ended.\n\n"
+                "To regain access, create a WEEX account through "
+                "our link and verify your UID below.",
+                reply_markup=kb_verify_prompt(),
+            )
+            await callback.answer()
+            return
+
+        days_left = max(0, remaining.days)
         await callback.message.edit_text(
             f"Your trial is already active — {days_left} day(s) remaining.\n\n"
             "Join the group below, or verify your WEEX account "
@@ -234,7 +246,7 @@ async def cb_start_trial(callback: CallbackQuery):
             "Your trial period has ended.\n\n"
             "To regain access, create a WEEX account through "
             "our link and verify your UID below.",
-            reply_markup=kb_kicked_verify(),
+            reply_markup=kb_verify_prompt(),
         )
         await callback.answer()
         return
@@ -348,7 +360,7 @@ async def cb_cancel_verify(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(
             "Verification cancelled.\n\n"
             "Verify your WEEX account when you're ready to rejoin.",
-            reply_markup=kb_kicked_verify(),
+            reply_markup=kb_verify_prompt(),
         )
     else:
         await callback.message.edit_text(WELCOME_TEXT, reply_markup=kb_welcome())
@@ -495,21 +507,5 @@ async def cmd_verify_group(message: Message):
 # /help
 # ---------------------------------------------------------------------------
 @router.message(Command("help"), F.chat.type == "private")
-async def cmd_help(message: Message):
-    if message.from_user.id == ADMIN_ID:
-        await message.answer(
-            "Admin commands:\n"
-            "/stats  - group statistics\n"
-            "/status <user_id>  - check user info\n"
-            "/reset <user_id>  - reset trial\n"
-            "/kick <user_id>  - manual kick\n"
-            "/users  - list trial users\n"
-            "/users verified  - list verified users\n"
-            "/unflag <user_id|all>  - unflag users\n\n"
-            "Chat relay: reply to any forwarded message to respond to a user."
-        )
-    else:
-        await message.answer(
-            "Tap a button below to get started.",
-            reply_markup=kb_post_join(),
-        )
+async def cmd_help(message: Message, state: FSMContext):
+    await cmd_start(message, state)
