@@ -151,11 +151,12 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(WELCOME_TEXT, reply_markup=kb_welcome())
         return
 
-    # Update profile info
-    user.bot_started = True
-    user.username = message.from_user.username
-    user.first_name = message.from_user.first_name
-    await user.save()
+    # Update profile info (atomic — never overwrite status)
+    await User.filter(telegram_id=message.from_user.id).update(
+        bot_started=True,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
 
     if user.status == "verified":
         await message.answer(
@@ -425,7 +426,10 @@ async def process_uid_input(message: Message, state: FSMContext, bot: Bot):
 
     user.verify_attempts += 1
     user.last_verify_attempt = now
-    await user.save()
+    await User.filter(id=user.id).update(
+        verify_attempts=user.verify_attempts,
+        last_verify_attempt=now,
+    )
 
     verifying_msg = await message.answer("Verifying your WEEX UID...")
 
@@ -447,7 +451,11 @@ async def process_uid_input(message: Message, state: FSMContext, bot: Bot):
         user.status = "verified"
         user.weex_uid = weex_uid
         user.verified_time = now
-        await user.save()
+        await User.filter(id=user.id).update(
+            status="verified",
+            weex_uid=weex_uid,
+            verified_time=now,
+        )
 
         logger.info(f"User {user.telegram_id} verified with WEEX UID {weex_uid}")
 

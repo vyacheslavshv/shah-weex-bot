@@ -46,9 +46,10 @@ async def on_join_request(event: ChatJoinRequest, bot: Bot):
 
         # Trial or verified — approve
         await _safe_approve(event)
-        existing.username = tg_user.username
-        existing.first_name = tg_user.first_name
-        await existing.save()
+        await User.filter(telegram_id=tg_user.id).update(
+            username=tg_user.username,
+            first_name=tg_user.first_name,
+        )
         logger.info(f"Approved join request from {tg_user.id} (@{tg_user.username}), status={existing.status}")
         return
 
